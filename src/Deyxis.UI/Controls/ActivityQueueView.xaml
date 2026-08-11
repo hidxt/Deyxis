@@ -1,0 +1,52 @@
+<UserControl
+    x:Class="Deyxis.UI.Controls.ActivityQueueView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Border Background="#FF11151D" CornerRadius="16" Padding="14">
+        <Grid RowDefinitions="Auto,*" RowSpacing="10">
+            <TextBlock
+                Foreground="#8FA8B0BF"
+                FontSize="11"
+                FontWeight="SemiBold"
+                Text="ACTIVITY QUEUE" />
+
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border
+                                Margin="0,0,0,8"
+                                Padding="12"
+                                Background="#16FFFFFF"
+                                CornerRadius="12">
+                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                                    <Ellipse Width="7" Height="7" Fill="#FF7C8BFF" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Column="1" Spacing="3">
+                                        <Grid ColumnDefinitions="*,Auto">
+                                            <TextBlock
+                                                Foreground="White"
+                                                FontSize="13"
+                                                FontWeight="SemiBold"
+                                                Text="{Binding Title}" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                Foreground="#8FA8B0BF"
+                                                FontSize="10"
+                                                Text="{Binding State}" />
+                                        </Grid>
+                                        <TextBlock
+                                            Foreground="#92C2C8D3"
+                                            FontSize="11"
+                                            Text="{Binding Description}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</UserControl>

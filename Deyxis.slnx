@@ -1,0 +1,11 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="src/Deyxis.App/Deyxis.App.csproj" />
+  <Project Path="src/Deyxis.Core/Deyxis.Core.csproj" />
+  <Project Path="src/Deyxis.PluginSdk/Deyxis.PluginSdk.csproj" />
+  <Project Path="src/Deyxis.UI/Deyxis.UI.csproj" />
+  <Project Path="tests/Deyxis.Core.Tests/Deyxis.Core.Tests.csproj" />
+  <Project Path="tests/Deyxis.UI.Tests/Deyxis.UI.Tests.csproj" />
+</Solution>

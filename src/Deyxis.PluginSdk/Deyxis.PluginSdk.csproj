@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Deyxis.Core/Deyxis.Core.csproj" />
+  </ItemGroup>
+</Project>
