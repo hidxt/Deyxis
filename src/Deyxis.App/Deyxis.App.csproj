@@ -16,7 +16,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Deyxis.Core/Deyxis.Core.csproj" />
+    <ProjectReference Include="../Deyxis.Platform.Windows/Deyxis.Platform.Windows.csproj" />
     <ProjectReference Include="../Deyxis.PluginSdk/Deyxis.PluginSdk.csproj" />
+    <ProjectReference Include="../Deyxis.Providers/Deyxis.Providers.csproj" />
     <ProjectReference Include="../Deyxis.UI/Deyxis.UI.csproj" />
   </ItemGroup>
 </Project>

@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="../Deyxis.Core/Deyxis.Core.csproj" />
+    <ProjectReference Include="../Deyxis.PluginSdk/Deyxis.PluginSdk.csproj" />
+  </ItemGroup>
+</Project>

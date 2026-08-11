@@ -4,8 +4,11 @@
   </Configurations>
   <Project Path="src/Deyxis.App/Deyxis.App.csproj" />
   <Project Path="src/Deyxis.Core/Deyxis.Core.csproj" />
+  <Project Path="src/Deyxis.Platform.Windows/Deyxis.Platform.Windows.csproj" />
   <Project Path="src/Deyxis.PluginSdk/Deyxis.PluginSdk.csproj" />
+  <Project Path="src/Deyxis.Providers/Deyxis.Providers.csproj" />
   <Project Path="src/Deyxis.UI/Deyxis.UI.csproj" />
   <Project Path="tests/Deyxis.Core.Tests/Deyxis.Core.Tests.csproj" />
+  <Project Path="tests/Deyxis.Providers.Tests/Deyxis.Providers.Tests.csproj" />
   <Project Path="tests/Deyxis.UI.Tests/Deyxis.UI.Tests.csproj" />
 </Solution>
