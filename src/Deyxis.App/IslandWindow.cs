@@ -23,17 +23,19 @@ public sealed class IslandWindow : Window
     private readonly AppWindow appWindow;
     private readonly nint windowHandle;
     private readonly IslandView islandView;
+    private readonly IslandStateMachine stateMachine = new();
+    private volatile bool closed;
 
-    public IslandWindow()
+    public IslandWindow(ActivitySnapshot initialSnapshot)
     {
+        ArgumentNullException.ThrowIfNull(initialSnapshot);
+
         Title = "昼隙 / Deyxis";
 
-        var manager = CreateMockActivityManager();
-        var stateMachine = new IslandStateMachine();
-
         islandView = new IslandView();
-        islandView.Bind(manager.Snapshot(), stateMachine);
+        islandView.Bind(initialSnapshot, stateMachine);
         islandView.PresentationStateChanged += IslandView_PresentationStateChanged;
+        Closed += IslandWindow_Closed;
         Content = islandView;
 
         windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -46,35 +48,29 @@ public sealed class IslandWindow : Window
 
     public void ShowWithoutActivation() => appWindow.Show(false);
 
-    private static ActivityManager CreateMockActivityManager()
+    public void UpdateSnapshot(ActivitySnapshot snapshot)
     {
-        var manager = new ActivityManager();
-        var now = new DateTimeOffset(2026, 8, 11, 12, 0, 0, TimeSpan.Zero);
+        ArgumentNullException.ThrowIfNull(snapshot);
 
-        manager.Upsert(CreateActivity("10000000-0000-0000-0000-000000000001", "music", ActivityState.Running, "Music", "Playing · Night Drive", now.AddMinutes(-3)));
-        manager.Upsert(CreateActivity("20000000-0000-0000-0000-000000000002", "codex", ActivityState.Running, "Codex", "Implementing the WinUI host", now.AddMinutes(-2)));
-        manager.Upsert(CreateActivity("30000000-0000-0000-0000-000000000003", "claude", ActivityState.Waiting, "Claude", "Waiting for your approval", now));
-        manager.Upsert(CreateActivity("40000000-0000-0000-0000-000000000004", "opencode", ActivityState.Completed, "OpenCode", "Completed repository analysis", now.AddMinutes(-1)));
+        if (closed)
+        {
+            return;
+        }
 
-        return manager;
+        if (DispatcherQueue.HasThreadAccess)
+        {
+            islandView.Bind(snapshot, stateMachine);
+            return;
+        }
+
+        _ = DispatcherQueue.TryEnqueue(() =>
+        {
+            if (!closed)
+            {
+                islandView.Bind(snapshot, stateMachine);
+            }
+        });
     }
-
-    private static Activity CreateActivity(
-        string id,
-        string providerId,
-        ActivityState state,
-        string title,
-        string description,
-        DateTimeOffset timestamp) => new(
-            Guid.Parse(id),
-            providerId,
-            (ActivityCategory)0,
-            state,
-            0,
-            title,
-            description,
-            null,
-            timestamp);
 
     private void ConfigureWindow()
     {
@@ -92,6 +88,13 @@ public sealed class IslandWindow : Window
     }
 
     private void IslandView_PresentationStateChanged(object? sender, EventArgs e) => ResizeAndPosition();
+
+    private void IslandWindow_Closed(object sender, WindowEventArgs args)
+    {
+        closed = true;
+        islandView.PresentationStateChanged -= IslandView_PresentationStateChanged;
+        Closed -= IslandWindow_Closed;
+    }
 
     private void ResizeAndPosition()
     {

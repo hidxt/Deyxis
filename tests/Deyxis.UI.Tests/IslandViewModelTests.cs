@@ -21,6 +21,30 @@ public sealed class IslandViewModelTests
         Assert.Equal(IslandPresentationState.Expanded, viewModel.PresentationState);
     }
 
+    [Fact]
+    public void Refresh_replaces_primary_when_snapshot_order_changes()
+    {
+        var viewModel = new IslandViewModel();
+        viewModel.Refresh(TestSnapshot.With("Codex", "Claude"), IslandPresentationState.Expanded);
+        viewModel.Refresh(TestSnapshot.With("Claude", "Codex"), IslandPresentationState.Expanded);
+
+        Assert.Equal("Claude", viewModel.PrimaryActivity!.Title);
+    }
+
+    [Fact]
+    public void Refresh_notifies_snapshot_backed_properties_when_snapshot_order_changes()
+    {
+        var viewModel = new IslandViewModel();
+        var changedProperties = new List<string?>();
+        viewModel.Refresh(TestSnapshot.With("Codex", "Claude"), IslandPresentationState.Expanded);
+        viewModel.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+
+        viewModel.Refresh(TestSnapshot.With("Claude", "Codex"), IslandPresentationState.Expanded);
+
+        Assert.Contains(nameof(IslandViewModel.PrimaryActivity), changedProperties);
+        Assert.Contains(nameof(IslandViewModel.Queue), changedProperties);
+    }
+
     private static class TestSnapshot
     {
         public static ActivitySnapshot With(params string[] titles) => new(
