@@ -10,6 +10,12 @@
         DragOver="Root_DragOver"
         Drop="Root_Drop">
         <Border
+            x:Name="RevealStrip"
+            Background="#E6FFFFFF"
+            CornerRadius="0,0,3,3"
+            PointerEntered="RevealStrip_PointerEntered"
+            Visibility="Collapsed" />
+        <Border
             x:Name="CapsuleSurface"
             Background="#F20B0C10"
             BorderBrush="#35FFFFFF"

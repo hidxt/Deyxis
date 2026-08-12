@@ -5,4 +5,5 @@ public enum IslandPresentationState
     Idle,
     Hover,
     Expanded,
+    HiddenEdge,
 }

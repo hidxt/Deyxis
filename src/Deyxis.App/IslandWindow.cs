@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Deyxis.Core.Activities;
 using Deyxis.Core.Island;
+using Deyxis.Core.Placement;
 using Deyxis.Providers.FileDrop;
 using Deyxis.Providers.Lyrics;
 using Deyxis.UI.Controls;
@@ -10,11 +11,10 @@ using Windows.Graphics;
 
 namespace Deyxis.App;
 
-public sealed class IslandWindow : Window
+public sealed class IslandWindow : Window, IIslandPlacementHost
 {
     private const int GwlExStyle = -20;
     private const long WsExNoActivate = 0x08000000L;
-    private const int SmCxScreen = 0;
     private const int IdleWidth = 360;
     private const int IdleHeight = 46;
     private const int HoverWidth = 420;
@@ -27,6 +27,8 @@ public sealed class IslandWindow : Window
     private readonly IslandView islandView;
     private readonly FileDropProvider fileDropProvider;
     private readonly IslandStateMachine stateMachine = new();
+    private readonly IslandWindowPlacementCoordinator placementCoordinator;
+    private bool applyingPlacement;
     private volatile bool closed;
 
     public IslandWindow(ActivitySnapshot initialSnapshot, FileDropProvider fileDropProvider)
@@ -42,6 +44,7 @@ public sealed class IslandWindow : Window
         islandView.FilesDropped += IslandView_FilesDropped;
         islandView.FileDropConfirmRequested += IslandView_FileDropConfirmRequested;
         islandView.FileDropCancelRequested += IslandView_FileDropCancelRequested;
+        islandView.RevealRequested += IslandView_RevealRequested;
         Closed += IslandWindow_Closed;
         Content = islandView;
 
@@ -50,8 +53,25 @@ public sealed class IslandWindow : Window
         appWindow = AppWindow.GetFromWindowId(windowId);
 
         ConfigureWindow();
-        ResizeAndPosition();
+        placementCoordinator = new IslandWindowPlacementCoordinator(
+            new WindowsMonitorForegroundSource(),
+            new DispatcherQueueAdapter(DispatcherQueue),
+            this,
+            new IslandPlacementController(new LogicalSize(120, 6), 8));
+        placementCoordinator.Start();
     }
+
+    public event EventHandler? RevealRequested;
+
+    public PixelRect CurrentBounds => new(
+        appWindow.Position.X,
+        appWindow.Position.Y,
+        appWindow.Size.Width,
+        appWindow.Size.Height);
+
+    public IslandPresentationState CurrentPresentationState => stateMachine.Current;
+
+    public LogicalSize CurrentLogicalSize => GetLogicalSize(stateMachine.Current);
 
     public void ShowWithoutActivation() => appWindow.Show(false);
 
@@ -94,15 +114,44 @@ public sealed class IslandWindow : Window
         _ = SetWindowLongPtr(windowHandle, GwlExStyle, new nint(extendedStyle | WsExNoActivate));
     }
 
-    private void IslandView_PresentationStateChanged(object? sender, EventArgs e) => ResizeAndPosition();
+    public void ApplyPlacement(IslandPlacement placement)
+    {
+        applyingPlacement = true;
+        try
+        {
+            islandView.SetPresentationState(placement.PresentationState);
+            appWindow.MoveAndResize(new RectInt32(
+                placement.Bounds.X,
+                placement.Bounds.Y,
+                placement.Bounds.Width,
+                placement.Bounds.Height));
+        }
+        finally
+        {
+            applyingPlacement = false;
+        }
+    }
+
+    private void IslandView_PresentationStateChanged(object? sender, EventArgs e)
+    {
+        if (!applyingPlacement)
+        {
+            placementCoordinator.Refresh();
+        }
+    }
+
+    private void IslandView_RevealRequested(object? sender, EventArgs e) =>
+        RevealRequested?.Invoke(this, EventArgs.Empty);
 
     private void IslandWindow_Closed(object sender, WindowEventArgs args)
     {
         closed = true;
+        placementCoordinator.Dispose();
         islandView.PresentationStateChanged -= IslandView_PresentationStateChanged;
         islandView.FilesDropped -= IslandView_FilesDropped;
         islandView.FileDropConfirmRequested -= IslandView_FileDropConfirmRequested;
         islandView.FileDropCancelRequested -= IslandView_FileDropCancelRequested;
+        islandView.RevealRequested -= IslandView_RevealRequested;
         Closed -= IslandWindow_Closed;
     }
 
@@ -126,9 +175,9 @@ public sealed class IslandWindow : Window
     private void IslandView_FileDropCancelRequested(Guid confirmationToken) =>
         fileDropProvider.Cancel(confirmationToken);
 
-    private void ResizeAndPosition()
+    private LogicalSize GetLogicalSize(IslandPresentationState state)
     {
-        var (logicalWidth, logicalHeight) = islandView.ViewModel.PresentationState switch
+        var (logicalWidth, logicalHeight) = state switch
         {
             IslandPresentationState.Hover => (HoverWidth, HoverHeight),
             IslandPresentationState.Expanded when islandView.ViewModel.HasFileDropPreview =>
@@ -136,14 +185,15 @@ public sealed class IslandWindow : Window
             IslandPresentationState.Expanded => (ExpandedWidth, ExpandedHeight),
             _ => (IdleWidth, IdleHeight),
         };
+        return new LogicalSize(logicalWidth, logicalHeight);
+    }
 
-        var dpiScale = GetDpiForWindow(windowHandle) / 96d;
-        var width = (int)Math.Round(logicalWidth * dpiScale);
-        var height = (int)Math.Round(logicalHeight * dpiScale);
-        var top = (int)Math.Round(8 * dpiScale);
-        var left = Math.Max(0, (GetSystemMetrics(SmCxScreen) - width) / 2);
+    private sealed class DispatcherQueueAdapter(Microsoft.UI.Dispatching.DispatcherQueue dispatcherQueue)
+        : IIslandUiDispatcher
+    {
+        public bool HasThreadAccess => dispatcherQueue.HasThreadAccess;
 
-        appWindow.MoveAndResize(new RectInt32(left, top, width, height));
+        public bool TryEnqueue(Action callback) => dispatcherQueue.TryEnqueue(() => callback());
     }
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
@@ -152,9 +202,4 @@ public sealed class IslandWindow : Window
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
     private static extern nint SetWindowLongPtr(nint windowHandle, int index, nint newValue);
 
-    [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(int index);
-
-    [DllImport("user32.dll")]
-    private static extern uint GetDpiForWindow(nint windowHandle);
 }

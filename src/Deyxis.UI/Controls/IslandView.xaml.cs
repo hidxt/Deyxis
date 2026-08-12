@@ -26,6 +26,8 @@ public sealed partial class IslandView : UserControl
 
     public event Action<Guid>? FileDropCancelRequested;
 
+    public event EventHandler? RevealRequested;
+
     public IslandViewModel ViewModel { get; } = new();
 
     public void SetValidatedFileDrop(Guid activityId, Guid confirmationToken, string canonicalPath)
@@ -49,6 +51,17 @@ public sealed partial class IslandView : UserControl
         stateMachine = presentationStateMachine;
         RefreshPresentation();
     }
+
+    public void SetPresentationState(IslandPresentationState state)
+    {
+        stateMachine?.SetPresentationState(state);
+        RefreshPresentation();
+    }
+
+    private void RevealStrip_PointerEntered(
+        object sender,
+        Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e) =>
+        RevealRequested?.Invoke(this, EventArgs.Empty);
 
     private void CapsuleSurface_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
     {
@@ -128,8 +141,10 @@ public sealed partial class IslandView : UserControl
         CapsuleTitle.Text = primary is null ? "Deyxis" : $"{primary.Title} · {primary.State}";
         HoverSummary.Text = primary?.Description ?? "No active work";
 
+        var isHiddenEdge = ViewModel.PresentationState == IslandPresentationState.HiddenEdge;
         var isExpanded = ViewModel.PresentationState == IslandPresentationState.Expanded;
-        CapsuleSurface.Visibility = isExpanded ? Visibility.Collapsed : Visibility.Visible;
+        RevealStrip.Visibility = isHiddenEdge ? Visibility.Visible : Visibility.Collapsed;
+        CapsuleSurface.Visibility = isExpanded || isHiddenEdge ? Visibility.Collapsed : Visibility.Visible;
         ExpandedSurface.Visibility = isExpanded ? Visibility.Visible : Visibility.Collapsed;
         HoverSummary.Visibility = ViewModel.PresentationState == IslandPresentationState.Hover
             ? Visibility.Visible

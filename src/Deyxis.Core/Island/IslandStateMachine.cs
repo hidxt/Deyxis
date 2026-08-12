@@ -25,4 +25,6 @@ public sealed class IslandStateMachine
         : IslandPresentationState.Expanded;
 
     public void Collapse() => Current = IslandPresentationState.Idle;
+
+    public void SetPresentationState(IslandPresentationState state) => Current = state;
 }

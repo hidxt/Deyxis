@@ -8,6 +8,7 @@
   <Project Path="src/Deyxis.PluginSdk/Deyxis.PluginSdk.csproj" />
   <Project Path="src/Deyxis.Providers/Deyxis.Providers.csproj" />
   <Project Path="src/Deyxis.UI/Deyxis.UI.csproj" />
+  <Project Path="tests/Deyxis.App.Tests/Deyxis.App.Tests.csproj" />
   <Project Path="tests/Deyxis.Core.Tests/Deyxis.Core.Tests.csproj" />
   <Project Path="tests/Deyxis.Providers.Tests/Deyxis.Providers.Tests.csproj" />
   <Project Path="tests/Deyxis.UI.Tests/Deyxis.UI.Tests.csproj" />
