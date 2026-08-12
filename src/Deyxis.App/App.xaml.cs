@@ -1,7 +1,9 @@
 using Deyxis.Core.Activities;
 using Deyxis.Core.Events;
 using Deyxis.Platform.Windows.Media;
+using Deyxis.Platform.Windows.Wallpaper;
 using Deyxis.Providers.Agents;
+using Deyxis.Providers.FileDrop;
 using Deyxis.Providers.Lyrics;
 using Deyxis.Providers.Media;
 using Microsoft.UI.Xaml;
@@ -17,6 +19,7 @@ public partial class App : Application
     private GsmtcMediaSessionPlatform? mediaSessionPlatform;
     private MediaProvider? mediaProvider;
     private AgentProviderComposition? agentProviderComposition;
+    private FileDropProvider? fileDropProvider;
 
     public App()
     {
@@ -29,12 +32,14 @@ public partial class App : Application
         activityPipeline = new ActivityPipeline(eventBus, new ActivityManager());
         activityProvider = new MockActivityProvider(eventBus);
         agentProviderComposition = AgentProviderComposition.CreateDisabled(eventBus);
-        islandWindow = new IslandWindow(activityPipeline.Current);
+        fileDropProvider = new FileDropProvider(eventBus, new WindowsCurrentUserWallpaper());
+        islandWindow = new IslandWindow(activityPipeline.Current, fileDropProvider);
 
         activityPipeline.SnapshotChanged += ActivityPipeline_SnapshotChanged;
         islandWindow.Closed += IslandWindow_Closed;
 
         activityProvider.Start();
+        fileDropProvider.Start();
         activityProvider.PublishInitialActivities();
         mediaStartupTokenSource = new CancellationTokenSource();
         _ = StartMediaProviderAsync(eventBus, mediaStartupTokenSource.Token);
@@ -62,6 +67,7 @@ public partial class App : Application
 
         activityProvider?.Dispose();
         agentProviderComposition?.Dispose();
+        fileDropProvider?.Stop();
         mediaStartupTokenSource?.Cancel();
         mediaProvider?.Dispose();
         mediaSessionPlatform?.Dispose();
@@ -70,6 +76,7 @@ public partial class App : Application
 
         activityProvider = null;
         agentProviderComposition = null;
+        fileDropProvider = null;
         mediaStartupTokenSource = null;
         mediaProvider = null;
         mediaSessionPlatform = null;

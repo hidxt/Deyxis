@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Deyxis.Core.Activities;
 using Deyxis.Core.Island;
+using Deyxis.Providers.FileDrop;
 using Deyxis.Providers.Lyrics;
 using Deyxis.UI.Controls;
 using Microsoft.UI.Windowing;
@@ -24,18 +25,23 @@ public sealed class IslandWindow : Window
     private readonly AppWindow appWindow;
     private readonly nint windowHandle;
     private readonly IslandView islandView;
+    private readonly FileDropProvider fileDropProvider;
     private readonly IslandStateMachine stateMachine = new();
     private volatile bool closed;
 
-    public IslandWindow(ActivitySnapshot initialSnapshot)
+    public IslandWindow(ActivitySnapshot initialSnapshot, FileDropProvider fileDropProvider)
     {
         ArgumentNullException.ThrowIfNull(initialSnapshot);
+        this.fileDropProvider = fileDropProvider ?? throw new ArgumentNullException(nameof(fileDropProvider));
 
         Title = "昼隙 / Deyxis";
 
         islandView = new IslandView();
         islandView.Bind(initialSnapshot, stateMachine);
         islandView.PresentationStateChanged += IslandView_PresentationStateChanged;
+        islandView.FilesDropped += IslandView_FilesDropped;
+        islandView.FileDropConfirmRequested += IslandView_FileDropConfirmRequested;
+        islandView.FileDropCancelRequested += IslandView_FileDropCancelRequested;
         Closed += IslandWindow_Closed;
         Content = islandView;
 
@@ -94,14 +100,39 @@ public sealed class IslandWindow : Window
     {
         closed = true;
         islandView.PresentationStateChanged -= IslandView_PresentationStateChanged;
+        islandView.FilesDropped -= IslandView_FilesDropped;
+        islandView.FileDropConfirmRequested -= IslandView_FileDropConfirmRequested;
+        islandView.FileDropCancelRequested -= IslandView_FileDropCancelRequested;
         Closed -= IslandWindow_Closed;
     }
+
+    private async Task IslandView_FilesDropped(IReadOnlyList<string> paths)
+    {
+        var result = await fileDropProvider.HandleDropAsync(paths);
+        if (!result.Accepted)
+        {
+            return;
+        }
+
+        islandView.SetValidatedFileDrop(
+            result.ActivityId,
+            result.ConfirmationToken,
+            Path.GetFullPath(paths[0]));
+    }
+
+    private Task IslandView_FileDropConfirmRequested(Guid confirmationToken) =>
+        fileDropProvider.ConfirmAsync(confirmationToken);
+
+    private void IslandView_FileDropCancelRequested(Guid confirmationToken) =>
+        fileDropProvider.Cancel(confirmationToken);
 
     private void ResizeAndPosition()
     {
         var (logicalWidth, logicalHeight) = islandView.ViewModel.PresentationState switch
         {
             IslandPresentationState.Hover => (HoverWidth, HoverHeight),
+            IslandPresentationState.Expanded when islandView.ViewModel.HasFileDropPreview =>
+                (ExpandedWidth, 500),
             IslandPresentationState.Expanded => (ExpandedWidth, ExpandedHeight),
             _ => (IdleWidth, IdleHeight),
         };

@@ -3,6 +3,7 @@ using Deyxis.Core.Island;
 using Deyxis.Providers.Lyrics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Windows.ApplicationModel.DataTransfer;
 
 namespace Deyxis.UI.Controls;
 
@@ -19,7 +20,24 @@ public sealed partial class IslandView : UserControl
 
     public event EventHandler? PresentationStateChanged;
 
+    public event Func<IReadOnlyList<string>, Task>? FilesDropped;
+
+    public event Func<Guid, Task>? FileDropConfirmRequested;
+
+    public event Action<Guid>? FileDropCancelRequested;
+
     public IslandViewModel ViewModel { get; } = new();
+
+    public void SetValidatedFileDrop(Guid activityId, Guid confirmationToken, string canonicalPath)
+    {
+        ViewModel.SetValidatedFileDrop(activityId, confirmationToken, canonicalPath);
+        if (stateMachine?.Current != IslandPresentationState.Expanded)
+        {
+            stateMachine?.ToggleExpanded();
+        }
+
+        RefreshPresentation();
+    }
 
     public void Bind(
         ActivitySnapshot activitySnapshot,
@@ -54,6 +72,46 @@ public sealed partial class IslandView : UserControl
     {
         stateMachine?.Collapse();
         RefreshPresentation();
+    }
+
+    private void Root_DragOver(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems))
+        {
+            return;
+        }
+
+        e.AcceptedOperation = DataPackageOperation.Copy;
+        e.DragUIOverride.Caption = "Validate image for wallpaper preview";
+        e.DragUIOverride.IsContentVisible = false;
+    }
+
+    private async void Root_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.DataView.Contains(StandardDataFormats.StorageItems) || FilesDropped is null)
+        {
+            return;
+        }
+
+        var items = await e.DataView.GetStorageItemsAsync();
+        await FilesDropped(items.Select(item => item.Path).ToArray());
+    }
+
+    private async void ConfirmWallpaperButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.FileDropConfirmationToken is Guid confirmationToken &&
+            FileDropConfirmRequested is not null)
+        {
+            await FileDropConfirmRequested(confirmationToken);
+        }
+    }
+
+    private void CancelWallpaperButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.FileDropConfirmationToken is Guid confirmationToken)
+        {
+            FileDropCancelRequested?.Invoke(confirmationToken);
+        }
     }
 
     private void RefreshPresentation()

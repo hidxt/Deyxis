@@ -2,6 +2,7 @@ using Deyxis.Core.Activities;
 using Deyxis.Core.Island;
 using Deyxis.Providers.Lyrics;
 using Deyxis.UI;
+using Microsoft.UI.Xaml;
 using Xunit;
 
 namespace Deyxis.UI.Tests;
@@ -79,6 +80,123 @@ public sealed class IslandViewModelTests
         Assert.Contains(nameof(IslandViewModel.Queue), changedProperties);
     }
 
+    [Fact]
+    public void FileDrop_preview_and_actions_require_matching_validated_drop_context()
+    {
+        var activityId = Guid.Parse("00000000-0000-0000-0000-000000000042");
+        var confirmationToken = Guid.Parse("00000000-0000-0000-0000-000000000099");
+        var viewModel = new IslandViewModel();
+        var snapshot = TestSnapshot.WithActivity(
+            activityId,
+            ActivityCategory.FileDrop,
+            ActivityState.Waiting,
+            "Image ready");
+
+        viewModel.Refresh(snapshot, IslandPresentationState.Expanded);
+
+        Assert.False(viewModel.HasFileDropPreview);
+        Assert.Equal(Visibility.Collapsed, viewModel.FileDropPreviewVisibility);
+        Assert.Equal(Visibility.Collapsed, viewModel.FileDropActionsVisibility);
+        Assert.Null(viewModel.FileDropPreviewSource);
+        Assert.Null(viewModel.FileDropConfirmationToken);
+
+        viewModel.SetValidatedFileDrop(
+            activityId,
+            confirmationToken,
+            @"C:\images\wallpaper.png");
+
+        Assert.True(viewModel.HasFileDropPreview);
+        Assert.Equal(Visibility.Visible, viewModel.FileDropPreviewVisibility);
+        Assert.Equal(Visibility.Visible, viewModel.FileDropActionsVisibility);
+        Assert.Equal("file:///C:/images/wallpaper.png", viewModel.FileDropPreviewSource);
+        Assert.Equal(confirmationToken, viewModel.FileDropConfirmationToken);
+    }
+
+    [Fact]
+    public void Removed_validated_FileDrop_activity_clears_preview_and_action_context()
+    {
+        var activityId = Guid.Parse("00000000-0000-0000-0000-000000000042");
+        var viewModel = new IslandViewModel();
+        viewModel.Refresh(
+            TestSnapshot.WithActivity(
+                activityId,
+                ActivityCategory.FileDrop,
+                ActivityState.Waiting,
+                "Image ready"),
+            IslandPresentationState.Expanded);
+        viewModel.SetValidatedFileDrop(
+            activityId,
+            Guid.Parse("00000000-0000-0000-0000-000000000099"),
+            @"C:\images\wallpaper.png");
+
+        viewModel.Refresh(TestSnapshot.With("Codex"), IslandPresentationState.Expanded);
+
+        Assert.False(viewModel.HasFileDropPreview);
+        Assert.Equal(Visibility.Collapsed, viewModel.FileDropActionsVisibility);
+        Assert.Null(viewModel.FileDropPreviewSource);
+        Assert.Null(viewModel.FileDropConfirmationToken);
+    }
+
+    [Fact]
+    public void Validated_FileDrop_preview_remains_available_when_another_activity_is_primary()
+    {
+        var activityId = Guid.Parse("00000000-0000-0000-0000-000000000042");
+        var confirmationToken = Guid.Parse("00000000-0000-0000-0000-000000000099");
+        var viewModel = new IslandViewModel();
+        var fileDrop = TestSnapshot.Activity(
+            activityId,
+            ActivityCategory.FileDrop,
+            ActivityState.Failed,
+            "Wallpaper not changed");
+        var waiting = TestSnapshot.Activity(
+            Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            ActivityCategory.Agent,
+            ActivityState.Waiting,
+            "Claude");
+        viewModel.Refresh(new ActivitySnapshot([fileDrop]), IslandPresentationState.Expanded);
+        viewModel.SetValidatedFileDrop(activityId, confirmationToken, @"C:\images\wallpaper.png");
+
+        viewModel.Refresh(new ActivitySnapshot([waiting, fileDrop]), IslandPresentationState.Expanded);
+
+        Assert.Equal("Claude", viewModel.PrimaryActivity?.Title);
+        Assert.True(viewModel.HasFileDropPreview);
+        Assert.Equal(confirmationToken, viewModel.FileDropConfirmationToken);
+    }
+
+    [Fact]
+    public void Reordering_validated_FileDrop_into_queue_notifies_visible_preview_state()
+    {
+        var activityId = Guid.Parse("00000000-0000-0000-0000-000000000042");
+        var viewModel = new IslandViewModel();
+        var fileDrop = TestSnapshot.Activity(
+            activityId,
+            ActivityCategory.FileDrop,
+            ActivityState.Failed,
+            "Wallpaper not changed");
+        var waiting = TestSnapshot.Activity(
+            Guid.Parse("00000000-0000-0000-0000-000000000001"),
+            ActivityCategory.Agent,
+            ActivityState.Waiting,
+            "Claude");
+        viewModel.Refresh(new ActivitySnapshot([fileDrop]), IslandPresentationState.Expanded);
+        viewModel.SetValidatedFileDrop(
+            activityId,
+            Guid.Parse("00000000-0000-0000-0000-000000000099"),
+            @"C:\images\wallpaper.png");
+        var previewVisibilityNotifications = new List<bool>();
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(IslandViewModel.FileDropPreviewVisibility))
+            {
+                previewVisibilityNotifications.Add(viewModel.HasFileDropPreview);
+            }
+        };
+
+        viewModel.Refresh(new ActivitySnapshot([waiting, fileDrop]), IslandPresentationState.Expanded);
+
+        Assert.Contains(true, previewVisibilityNotifications);
+    }
+
     private static class TestSnapshot
     {
         public static ActivitySnapshot WithCategory(ActivityCategory category, string title) => new(
@@ -92,6 +210,37 @@ public sealed class IslandViewModelTests
                 $"{title} activity",
                 null,
                 DateTimeOffset.UnixEpoch)]);
+
+        public static ActivitySnapshot WithActivity(
+            Guid id,
+            ActivityCategory category,
+            ActivityState state,
+            string title) => new(
+            [new Activity(
+                id,
+                "provider-1",
+                category,
+                state,
+                0,
+                title,
+                $"{title} activity",
+                null,
+                DateTimeOffset.UnixEpoch)]);
+
+        public static Activity Activity(
+            Guid id,
+            ActivityCategory category,
+            ActivityState state,
+            string title) => new(
+            id,
+            "provider-1",
+            category,
+            state,
+            0,
+            title,
+            $"{title} activity",
+            null,
+            DateTimeOffset.UnixEpoch);
 
         public static ActivitySnapshot With(params string[] titles) => new(
             titles.Select((title, index) => new Activity(
