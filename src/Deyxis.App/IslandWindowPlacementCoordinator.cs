@@ -43,6 +43,8 @@ public sealed class IslandWindowPlacementCoordinator : IDisposable
     private readonly IslandPlacementController controller;
     private bool started;
     private bool disposed;
+    private bool followActiveMonitor = true;
+    private bool hideInFullscreen = true;
 
     public IslandWindowPlacementCoordinator(
         IMonitorForegroundSource source,
@@ -81,6 +83,13 @@ public sealed class IslandWindowPlacementCoordinator : IDisposable
         Dispatch(ApplyCurrentPlacement);
     }
 
+    public void Configure(bool followActiveMonitor, bool hideInFullscreen)
+    {
+        this.followActiveMonitor = followActiveMonitor;
+        this.hideInFullscreen = hideInFullscreen;
+        Refresh();
+    }
+
     public void Dispose()
     {
         if (disposed)
@@ -117,10 +126,13 @@ public sealed class IslandWindowPlacementCoordinator : IDisposable
         }
 
         var foreground = source.GetForegroundWindow();
-        var monitor = MonitorManager.SelectTarget(monitors, foreground, host.CurrentBounds);
+        var monitor = MonitorManager.SelectTarget(
+            monitors,
+            followActiveMonitor ? foreground : null,
+            host.CurrentBounds);
         host.ApplyPlacement(controller.Update(
             monitor,
-            FullscreenDetector.IsFullscreen(foreground, monitor),
+            hideInFullscreen && FullscreenDetector.IsFullscreen(foreground, monitor),
             host.CurrentPresentationState,
             host.CurrentLogicalSize));
     }

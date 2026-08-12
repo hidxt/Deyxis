@@ -1,9 +1,12 @@
 using Deyxis.Core.Activities;
 using Deyxis.Core.Island;
+using Deyxis.Core.Settings;
 using Deyxis.Providers.Lyrics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.UI;
 
 namespace Deyxis.UI.Controls;
 
@@ -12,6 +15,7 @@ public sealed partial class IslandView : UserControl
     private ActivitySnapshot? snapshot;
     private LyricsSnapshot lyrics = LyricsSnapshot.Empty;
     private IslandStateMachine? stateMachine;
+    private bool expandOnHover = true;
 
     public IslandView()
     {
@@ -28,7 +32,28 @@ public sealed partial class IslandView : UserControl
 
     public event EventHandler? RevealRequested;
 
+    public event EventHandler? SettingsRequested;
+
     public IslandViewModel ViewModel { get; } = new();
+
+    public void ApplySettings(SettingsSnapshot settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        expandOnHover = settings.ExpandOnHover;
+        Opacity = settings.Opacity;
+        var cornerRadius = new CornerRadius(settings.CornerRadius);
+        CapsuleSurface.CornerRadius = cornerRadius;
+        ExpandedSurface.CornerRadius = cornerRadius;
+        var color = settings.SurfaceMode switch
+        {
+            IslandSurfaceMode.Mica => Color.FromArgb(242, 30, 32, 38),
+            IslandSurfaceMode.Acrylic => Color.FromArgb(220, 20, 23, 31),
+            _ => Color.FromArgb(242, 11, 12, 16),
+        };
+        CapsuleSurface.Background = new SolidColorBrush(color);
+        ExpandedSurface.Background = new SolidColorBrush(color);
+    }
 
     public void SetValidatedFileDrop(Guid activityId, Guid confirmationToken, string canonicalPath)
     {
@@ -65,7 +90,10 @@ public sealed partial class IslandView : UserControl
 
     private void CapsuleSurface_PointerEntered(object sender, Microsoft.UI.Xaml.Input.PointerRoutedEventArgs e)
     {
-        stateMachine?.PointerEntered();
+        if (expandOnHover)
+        {
+            stateMachine?.PointerEntered();
+        }
         RefreshPresentation();
     }
 
@@ -86,6 +114,9 @@ public sealed partial class IslandView : UserControl
         stateMachine?.Collapse();
         RefreshPresentation();
     }
+
+    private void SettingsButton_Click(object sender, RoutedEventArgs e) =>
+        SettingsRequested?.Invoke(this, EventArgs.Empty);
 
     private void Root_DragOver(object sender, DragEventArgs e)
     {

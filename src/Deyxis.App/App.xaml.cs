@@ -1,12 +1,16 @@
 using Deyxis.Core.Activities;
 using Deyxis.Core.Events;
+using Deyxis.Core.History;
+using Deyxis.Core.Settings;
 using Deyxis.Platform.Windows.Media;
+using Deyxis.Platform.Windows.Storage;
 using Deyxis.Platform.Windows.Wallpaper;
 using Deyxis.Providers.Agents;
 using Deyxis.Providers.FileDrop;
 using Deyxis.Providers.Lyrics;
 using Deyxis.Providers.Media;
 using Microsoft.UI.Xaml;
+using Deyxis.UI.Settings;
 
 namespace Deyxis.App;
 
@@ -20,23 +24,35 @@ public partial class App : Application
     private MediaProvider? mediaProvider;
     private AgentProviderComposition? agentProviderComposition;
     private FileDropProvider? fileDropProvider;
+    private SettingsWindow? settingsWindow;
+    private IDisposable? historySubscription;
+    private readonly SettingsStore settingsStore = new();
+    private readonly ActivityHistoryStore historyStore = new();
+    private readonly object historyGate = new();
+    private SettingsSnapshot settings = SettingsSnapshot.Default;
+    private ActivityHistoryRing history = new();
 
     public App()
     {
         InitializeComponent();
     }
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
+        settings = await settingsStore.LoadAsync();
+        history = await historyStore.LoadAsync();
         var eventBus = new EventBus();
+        historySubscription = eventBus.Subscribe<ActivityUpserted>(OnActivityUpserted);
         activityPipeline = new ActivityPipeline(eventBus, new ActivityManager());
         activityProvider = new MockActivityProvider(eventBus);
         agentProviderComposition = AgentProviderComposition.CreateDisabled(eventBus);
         fileDropProvider = new FileDropProvider(eventBus, new WindowsCurrentUserWallpaper());
         islandWindow = new IslandWindow(activityPipeline.Current, fileDropProvider);
+        islandWindow.ApplySettings(settings);
 
         activityPipeline.SnapshotChanged += ActivityPipeline_SnapshotChanged;
         islandWindow.Closed += IslandWindow_Closed;
+        islandWindow.SettingsRequested += IslandWindow_SettingsRequested;
 
         activityProvider.Start();
         fileDropProvider.Start();
@@ -48,6 +64,63 @@ public partial class App : Application
 
     public void PromoteWaitingActivity() => activityProvider?.PromoteWaitingActivity();
 
+    private void IslandWindow_SettingsRequested(object? sender, EventArgs e)
+    {
+        if (settingsWindow is not null)
+        {
+            settingsWindow.Activate();
+            return;
+        }
+
+        settingsWindow = new SettingsWindow(settings, history.Entries);
+        settingsWindow.SettingsChanged += SettingsWindow_SettingsChanged;
+        settingsWindow.HistoryClearRequested += SettingsWindow_HistoryClearRequested;
+        settingsWindow.Closed += SettingsWindow_Closed;
+        settingsWindow.Activate();
+    }
+
+    private async void SettingsWindow_SettingsChanged(object? sender, SettingsChangedEventArgs e)
+    {
+        settings = e.Settings;
+        islandWindow?.ApplySettings(settings);
+        await settingsStore.SaveAsync(settings);
+    }
+
+    private async void SettingsWindow_HistoryClearRequested(object? sender, EventArgs e)
+    {
+        lock (historyGate)
+        {
+            history.Clear();
+        }
+        await historyStore.ClearAsync();
+    }
+
+    private void SettingsWindow_Closed(object sender, WindowEventArgs args)
+    {
+        if (settingsWindow is null)
+        {
+            return;
+        }
+
+        settingsWindow.SettingsChanged -= SettingsWindow_SettingsChanged;
+        settingsWindow.HistoryClearRequested -= SettingsWindow_HistoryClearRequested;
+        settingsWindow.Closed -= SettingsWindow_Closed;
+        settingsWindow = null;
+    }
+
+    private void OnActivityUpserted(ActivityUpserted message)
+    {
+        ActivityHistorySummary[] entries;
+        lock (historyGate)
+        {
+            history.Add(message.Activity);
+            entries = history.Entries.ToArray();
+        }
+
+        settingsWindow?.RefreshHistory(entries);
+        _ = historyStore.SaveAsync(entries);
+    }
+
     private void ActivityPipeline_SnapshotChanged(object? sender, ActivitySnapshot snapshot)
     {
         islandWindow?.UpdateSnapshot(snapshot, mediaProvider?.CurrentLyrics);
@@ -58,6 +131,7 @@ public partial class App : Application
         if (islandWindow is not null)
         {
             islandWindow.Closed -= IslandWindow_Closed;
+            islandWindow.SettingsRequested -= IslandWindow_SettingsRequested;
         }
 
         if (activityPipeline is not null)
@@ -66,6 +140,7 @@ public partial class App : Application
         }
 
         activityProvider?.Dispose();
+        historySubscription?.Dispose();
         agentProviderComposition?.Dispose();
         fileDropProvider?.Stop();
         mediaStartupTokenSource?.Cancel();
@@ -81,6 +156,7 @@ public partial class App : Application
         mediaProvider = null;
         mediaSessionPlatform = null;
         activityPipeline = null;
+        historySubscription = null;
         islandWindow = null;
     }
 

@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using Deyxis.Core.Activities;
 using Deyxis.Core.Island;
 using Deyxis.Core.Placement;
+using Deyxis.Core.Settings;
 using Deyxis.Providers.FileDrop;
 using Deyxis.Providers.Lyrics;
 using Deyxis.UI.Controls;
@@ -30,6 +31,7 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
     private readonly IslandWindowPlacementCoordinator placementCoordinator;
     private bool applyingPlacement;
     private volatile bool closed;
+    private double islandWidth = SettingsSnapshot.Default.IslandWidth;
 
     public IslandWindow(ActivitySnapshot initialSnapshot, FileDropProvider fileDropProvider)
     {
@@ -45,6 +47,7 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
         islandView.FileDropConfirmRequested += IslandView_FileDropConfirmRequested;
         islandView.FileDropCancelRequested += IslandView_FileDropCancelRequested;
         islandView.RevealRequested += IslandView_RevealRequested;
+        islandView.SettingsRequested += IslandView_SettingsRequested;
         Closed += IslandWindow_Closed;
         Content = islandView;
 
@@ -63,6 +66,8 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
 
     public event EventHandler? RevealRequested;
 
+    public event EventHandler? SettingsRequested;
+
     public PixelRect CurrentBounds => new(
         appWindow.Position.X,
         appWindow.Position.Y,
@@ -74,6 +79,14 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
     public LogicalSize CurrentLogicalSize => GetLogicalSize(stateMachine.Current);
 
     public void ShowWithoutActivation() => appWindow.Show(false);
+
+    public void ApplySettings(SettingsSnapshot settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        islandWidth = settings.IslandWidth;
+        islandView.ApplySettings(settings);
+        placementCoordinator.Configure(settings.FollowActiveMonitor, settings.HideInFullscreen);
+    }
 
     public void UpdateSnapshot(ActivitySnapshot snapshot, LyricsSnapshot? lyrics = null)
     {
@@ -143,6 +156,9 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
     private void IslandView_RevealRequested(object? sender, EventArgs e) =>
         RevealRequested?.Invoke(this, EventArgs.Empty);
 
+    private void IslandView_SettingsRequested(object? sender, EventArgs e) =>
+        SettingsRequested?.Invoke(this, EventArgs.Empty);
+
     private void IslandWindow_Closed(object sender, WindowEventArgs args)
     {
         closed = true;
@@ -152,6 +168,7 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
         islandView.FileDropConfirmRequested -= IslandView_FileDropConfirmRequested;
         islandView.FileDropCancelRequested -= IslandView_FileDropCancelRequested;
         islandView.RevealRequested -= IslandView_RevealRequested;
+        islandView.SettingsRequested -= IslandView_SettingsRequested;
         Closed -= IslandWindow_Closed;
     }
 
@@ -179,11 +196,12 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
     {
         var (logicalWidth, logicalHeight) = state switch
         {
-            IslandPresentationState.Hover => (HoverWidth, HoverHeight),
+            IslandPresentationState.Hover => ((int)Math.Round(islandWidth), HoverHeight),
             IslandPresentationState.Expanded when islandView.ViewModel.HasFileDropPreview =>
-                (ExpandedWidth, 500),
-            IslandPresentationState.Expanded => (ExpandedWidth, ExpandedHeight),
-            _ => (IdleWidth, IdleHeight),
+                (Math.Max((int)Math.Round(islandWidth), ExpandedWidth), 500),
+            IslandPresentationState.Expanded =>
+                (Math.Max((int)Math.Round(islandWidth), ExpandedWidth), ExpandedHeight),
+            _ => ((int)Math.Round(islandWidth), IdleHeight),
         };
         return new LogicalSize(logicalWidth, logicalHeight);
     }

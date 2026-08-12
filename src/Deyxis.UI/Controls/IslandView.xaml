@@ -65,7 +65,7 @@
             Padding="18"
             Visibility="Collapsed">
             <Grid RowDefinitions="Auto,*,Auto" RowSpacing="14">
-                <Grid ColumnDefinitions="*,Auto">
+                <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
                     <StackPanel Orientation="Horizontal" Spacing="9" VerticalAlignment="Center">
                         <Ellipse Width="8" Height="8" Fill="#FF7C8BFF" />
                         <TextBlock
@@ -76,6 +76,16 @@
                     </StackPanel>
                     <Button
                         Grid.Column="1"
+                        Click="SettingsButton_Click"
+                        Padding="12,5"
+                        Background="#18FFFFFF"
+                        BorderBrush="#26FFFFFF"
+                        BorderThickness="1"
+                        CornerRadius="12"
+                        Foreground="#D9FFFFFF"
+                        Content="Settings" />
+                    <Button
+                        Grid.Column="2"
                         Click="CollapseButton_Click"
                         Padding="12,5"
                         Background="#18FFFFFF"
