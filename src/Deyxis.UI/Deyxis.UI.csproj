@@ -10,5 +10,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Deyxis.Core/Deyxis.Core.csproj" />
+    <ProjectReference Include="../Deyxis.Providers/Deyxis.Providers.csproj" />
   </ItemGroup>
 </Project>

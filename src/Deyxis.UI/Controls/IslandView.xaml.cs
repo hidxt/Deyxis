@@ -1,5 +1,6 @@
 using Deyxis.Core.Activities;
 using Deyxis.Core.Island;
+using Deyxis.Providers.Lyrics;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 
@@ -8,6 +9,7 @@ namespace Deyxis.UI.Controls;
 public sealed partial class IslandView : UserControl
 {
     private ActivitySnapshot? snapshot;
+    private LyricsSnapshot lyrics = LyricsSnapshot.Empty;
     private IslandStateMachine? stateMachine;
 
     public IslandView()
@@ -19,9 +21,13 @@ public sealed partial class IslandView : UserControl
 
     public IslandViewModel ViewModel { get; } = new();
 
-    public void Bind(ActivitySnapshot activitySnapshot, IslandStateMachine presentationStateMachine)
+    public void Bind(
+        ActivitySnapshot activitySnapshot,
+        IslandStateMachine presentationStateMachine,
+        LyricsSnapshot? lyrics = null)
     {
         snapshot = activitySnapshot;
+        this.lyrics = lyrics ?? LyricsSnapshot.Empty;
         stateMachine = presentationStateMachine;
         RefreshPresentation();
     }
@@ -57,7 +63,7 @@ public sealed partial class IslandView : UserControl
             return;
         }
 
-        ViewModel.Refresh(snapshot, stateMachine.Current);
+        ViewModel.Refresh(snapshot, stateMachine.Current, lyrics);
         DataContext = ViewModel;
 
         var primary = ViewModel.PrimaryActivity;

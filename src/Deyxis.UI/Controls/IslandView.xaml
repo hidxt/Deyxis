@@ -77,7 +77,7 @@
                 </Grid>
 
                 <Grid Grid.Row="1" ColumnDefinitions="1.25*,*" ColumnSpacing="12">
-                    <controls:PrimaryActivityView DataContext="{Binding PrimaryActivity}" />
+                    <controls:PrimaryActivityView />
                     <controls:ActivityQueueView Grid.Column="1" DataContext="{Binding Queue}" />
                 </Grid>
             </Grid>

@@ -1,6 +1,7 @@
 using Deyxis.Core.Activities;
 using Deyxis.Core.Events;
 using Deyxis.Platform.Windows.Media;
+using Deyxis.Providers.Lyrics;
 using Deyxis.Providers.Media;
 using Microsoft.UI.Xaml;
 
@@ -41,7 +42,7 @@ public partial class App : Application
 
     private void ActivityPipeline_SnapshotChanged(object? sender, ActivitySnapshot snapshot)
     {
-        islandWindow?.UpdateSnapshot(snapshot);
+        islandWindow?.UpdateSnapshot(snapshot, mediaProvider?.CurrentLyrics);
     }
 
     private void IslandWindow_Closed(object sender, WindowEventArgs args)
@@ -81,7 +82,11 @@ public partial class App : Application
             platform = await GsmtcMediaSessionPlatform.RequestAsync(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
-            provider = new MediaProvider(platform, eventBus);
+            var lyricsRoot = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Deyxis",
+                "Lyrics");
+            provider = new MediaProvider(platform, eventBus, new LocalLrcLyricsProvider(lyricsRoot));
             mediaSessionPlatform = platform;
             mediaProvider = provider;
             provider.Start();

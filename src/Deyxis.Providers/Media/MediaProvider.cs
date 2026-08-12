@@ -1,5 +1,6 @@
 using Deyxis.Core.Events;
 using Deyxis.PluginSdk;
+using Deyxis.Providers.Lyrics;
 
 namespace Deyxis.Providers.Media;
 
@@ -10,24 +11,47 @@ public sealed class MediaProvider : IActivityProvider, IDisposable
     private readonly object gate = new();
     private readonly IMediaSessionPlatform platform;
     private readonly IEventBus eventBus;
+    private readonly ILyricsProvider lyricsProvider;
     private readonly TimeProvider timeProvider;
     private CancellationTokenSource? stoppingTokenSource;
     private MediaSessionSnapshot? currentSession;
+    private LyricsSnapshot currentLyrics = LyricsSnapshot.Empty;
     private int refreshVersion;
 
     public MediaProvider(
         IMediaSessionPlatform platform,
         IEventBus eventBus,
         TimeProvider? timeProvider = null)
+        : this(platform, eventBus, EmptyLyricsProvider.Instance, timeProvider)
+    {
+    }
+
+    public MediaProvider(
+        IMediaSessionPlatform platform,
+        IEventBus eventBus,
+        ILyricsProvider lyricsProvider,
+        TimeProvider? timeProvider = null)
     {
         this.platform = platform ?? throw new ArgumentNullException(nameof(platform));
         this.eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
+        this.lyricsProvider = lyricsProvider ?? throw new ArgumentNullException(nameof(lyricsProvider));
         this.timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public string Id => "media";
 
     public ProviderHealth Health { get; private set; } = ProviderHealth.Stopped;
+
+    public LyricsSnapshot CurrentLyrics
+    {
+        get
+        {
+            lock (gate)
+            {
+                return currentLyrics;
+            }
+        }
+    }
 
     public void Start()
     {
@@ -59,6 +83,7 @@ public sealed class MediaProvider : IActivityProvider, IDisposable
 
             stoppingTokenSource = null;
             currentSession = null;
+            currentLyrics = LyricsSnapshot.Empty;
             Interlocked.Increment(ref refreshVersion);
             platform.CurrentSessionChanged -= OnCurrentSessionChanged;
             Health = ProviderHealth.Stopped;
@@ -115,6 +140,11 @@ public sealed class MediaProvider : IActivityProvider, IDisposable
             var snapshot = await platform.GetCurrentSessionAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
+            var lyrics = snapshot is null
+                ? LyricsSnapshot.Empty
+                : await GetLyricsOrEmptyAsync(snapshot, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
             lock (gate)
             {
                 if (stoppingTokenSource is null || version != refreshVersion)
@@ -123,6 +153,7 @@ public sealed class MediaProvider : IActivityProvider, IDisposable
                 }
 
                 currentSession = snapshot;
+                currentLyrics = lyrics;
                 Health = ProviderHealth.Running;
             }
 
@@ -147,6 +178,29 @@ public sealed class MediaProvider : IActivityProvider, IDisposable
                     Health = ProviderHealth.Failed;
                 }
             }
+        }
+    }
+
+    private async Task<LyricsSnapshot> GetLyricsOrEmptyAsync(
+        MediaSessionSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await lyricsProvider.GetSnapshotAsync(
+                    snapshot.Title,
+                    snapshot.Artist,
+                    snapshot.Position,
+                    cancellationToken)
+                .ConfigureAwait(false) ?? LyricsSnapshot.Empty;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return LyricsSnapshot.Empty;
         }
     }
 
@@ -199,5 +253,17 @@ public sealed class MediaProvider : IActivityProvider, IDisposable
                 Health = ProviderHealth.Failed;
             }
         }
+    }
+
+    private sealed class EmptyLyricsProvider : ILyricsProvider
+    {
+        public static EmptyLyricsProvider Instance { get; } = new();
+
+        public Task<LyricsSnapshot> GetSnapshotAsync(
+            string title,
+            string artist,
+            TimeSpan position,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(LyricsSnapshot.Empty);
     }
 }

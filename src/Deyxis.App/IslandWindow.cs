@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Deyxis.Core.Activities;
 using Deyxis.Core.Island;
+using Deyxis.Providers.Lyrics;
 using Deyxis.UI.Controls;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -48,7 +49,7 @@ public sealed class IslandWindow : Window
 
     public void ShowWithoutActivation() => appWindow.Show(false);
 
-    public void UpdateSnapshot(ActivitySnapshot snapshot)
+    public void UpdateSnapshot(ActivitySnapshot snapshot, LyricsSnapshot? lyrics = null)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
 
@@ -59,7 +60,7 @@ public sealed class IslandWindow : Window
 
         if (DispatcherQueue.HasThreadAccess)
         {
-            islandView.Bind(snapshot, stateMachine);
+            islandView.Bind(snapshot, stateMachine, lyrics);
             return;
         }
 
@@ -67,7 +68,7 @@ public sealed class IslandWindow : Window
         {
             if (!closed)
             {
-                islandView.Bind(snapshot, stateMachine);
+                islandView.Bind(snapshot, stateMachine, lyrics);
             }
         });
     }
