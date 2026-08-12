@@ -4,6 +4,7 @@ namespace Deyxis.Core.Activities;
 
 public sealed class ActivityPipeline : IDisposable
 {
+    private readonly object gate = new();
     private readonly IEventBus eventBus;
     private readonly ActivityManager manager;
     private readonly IDisposable upsertSubscription;
@@ -27,29 +28,48 @@ public sealed class ActivityPipeline : IDisposable
 
     public void Dispose()
     {
-        if (disposed)
+        lock (gate)
         {
-            return;
-        }
+            if (disposed)
+            {
+                return;
+            }
 
-        disposed = true;
-        upsertSubscription.Dispose();
-        removeSubscription.Dispose();
+            disposed = true;
+            upsertSubscription.Dispose();
+            removeSubscription.Dispose();
+        }
     }
 
     private void OnUpserted(ActivityUpserted message)
     {
-        if (manager.Upsert(message.Activity))
+        lock (gate)
         {
-            PublishSnapshot();
+            if (disposed)
+            {
+                return;
+            }
+
+            if (manager.Upsert(message.Activity))
+            {
+                PublishSnapshot();
+            }
         }
     }
 
     private void OnRemoved(ActivityRemoved message)
     {
-        if (manager.Remove(message.ActivityId))
+        lock (gate)
         {
-            PublishSnapshot();
+            if (disposed)
+            {
+                return;
+            }
+
+            if (manager.Remove(message.ActivityId))
+            {
+                PublishSnapshot();
+            }
         }
     }
 

@@ -91,6 +91,7 @@ public sealed class MediaProvider : IActivityProvider, IDisposable
 
         source.Cancel();
         source.Dispose();
+        eventBus.Publish(new ActivityRemoved(MediaActivityId));
     }
 
     public void Dispose() => Stop();

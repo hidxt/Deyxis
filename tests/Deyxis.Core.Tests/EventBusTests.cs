@@ -71,6 +71,20 @@ public sealed class EventBusTests
     }
 
     [Fact]
+    public void Subscription_disposed_during_publish_is_not_invoked_from_the_publish_snapshot()
+    {
+        var deliveryCount = 0;
+        var bus = new EventBus();
+        IDisposable? laterSubscription = null;
+        using var firstSubscription = bus.Subscribe<ActivityUpserted>(_ => laterSubscription!.Dispose());
+        laterSubscription = bus.Subscribe<ActivityUpserted>(_ => deliveryCount++);
+
+        bus.Publish(new ActivityUpserted(TestActivity.Create()));
+
+        Assert.Equal(0, deliveryCount);
+    }
+
+    [Fact]
     public void Disposing_one_of_duplicate_handlers_removes_only_its_registration()
     {
         var deliveryCount = 0;

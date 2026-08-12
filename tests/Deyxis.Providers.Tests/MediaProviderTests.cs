@@ -131,6 +131,28 @@ public sealed class MediaProviderTests
     }
 
     [Fact]
+    public async Task Stop_removes_the_last_published_media_activity()
+    {
+        var platform = new FakeMediaSessionPlatform
+        {
+            CurrentSession = CreateSession(canTogglePlayPause: true, canSkipNext: true),
+        };
+        var eventBus = new EventBus();
+        var upserted = new TaskCompletionSource<ActivityUpserted>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var removed = new TaskCompletionSource<ActivityRemoved>(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var upsertSubscription = eventBus.Subscribe<ActivityUpserted>(upserted.SetResult);
+        using var removalSubscription = eventBus.Subscribe<ActivityRemoved>(removed.SetResult);
+        using var provider = new MediaProvider(platform, eventBus);
+        provider.Start();
+        var upsert = await upserted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        provider.Stop();
+
+        var removal = await removed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(upsert.Activity.Id, removal.ActivityId);
+    }
+
+    [Fact]
     public async Task Disabled_next_control_is_not_delegated_to_the_platform()
     {
         var platform = new FakeMediaSessionPlatform

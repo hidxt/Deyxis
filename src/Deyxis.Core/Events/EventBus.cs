@@ -38,6 +38,11 @@ public sealed class EventBus : IEventBus
 
         foreach (var handler in handlers)
         {
+            if (!handler.IsActive)
+            {
+                continue;
+            }
+
             try
             {
                 ((Subscription<TEvent>)handler).Invoke(message);
@@ -50,6 +55,7 @@ public sealed class EventBus : IEventBus
 
     private void Unsubscribe(Subscription subscription)
     {
+        subscription.Deactivate();
         lock (gate)
         {
             if (!subscriptions.TryGetValue(subscription.EventType, out var handlers))
@@ -67,7 +73,13 @@ public sealed class EventBus : IEventBus
 
     private abstract class Subscription(Type eventType)
     {
+        private int active = 1;
+
         public Type EventType { get; } = eventType;
+
+        public bool IsActive => Volatile.Read(ref active) != 0;
+
+        public void Deactivate() => Interlocked.Exchange(ref active, 0);
     }
 
     private sealed class Subscription<TEvent>(Action<TEvent> handler) : Subscription(typeof(TEvent)) where TEvent : notnull

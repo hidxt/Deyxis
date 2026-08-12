@@ -1,6 +1,7 @@
 using Deyxis.Core.Activities;
 using Deyxis.Core.Events;
 using Deyxis.PluginSdk;
+using System.Security.Cryptography;
 
 namespace Deyxis.Providers.FileDrop;
 
@@ -165,29 +166,30 @@ public sealed class FileDropProvider : IActivityProvider
             return PublishRejection(FileDropRejection.FileTooLarge);
         }
 
-        var header = new byte[8];
-        int bytesRead;
+        FileFingerprint fingerprint;
         try
         {
-            await using var stream = fileSystem.OpenRead(canonicalPath);
-            bytesRead = await stream.ReadAsync(header, cancellationToken).ConfigureAwait(false);
+            fingerprint = await ReadFingerprintAsync(
+                canonicalPath,
+                metadata.Length,
+                expectedImageType.Value,
+                cancellationToken).ConfigureAwait(false);
         }
         catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
         {
             return PublishRejection(FileDropRejection.FileNotFound);
         }
-
-        cancellationToken.ThrowIfCancellationRequested();
-        if (!HeaderMatches(expectedImageType.Value, header.AsSpan(0, bytesRead)))
+        catch (InvalidDataException)
         {
             return PublishRejection(FileDropRejection.InvalidImageHeader);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var activityId = Guid.NewGuid();
         var confirmationToken = Guid.NewGuid();
         lock (gate)
         {
-            pendingDrops.Add(confirmationToken, new PendingDrop(activityId, canonicalPath));
+            pendingDrops.Add(confirmationToken, new PendingDrop(activityId, canonicalPath, fingerprint));
         }
 
         eventBus.Publish(new ActivityUpserted(CreateActivity(
@@ -197,6 +199,33 @@ public sealed class FileDropProvider : IActivityProvider
             "Review before setting wallpaper.")));
 
         return FileDropResult.Accept(activityId, confirmationToken);
+    }
+
+    public async Task<bool> RevalidatePendingAsync(
+        Guid confirmationToken,
+        CancellationToken cancellationToken = default)
+    {
+        PendingDrop pending;
+        lock (gate)
+        {
+            if (!pendingDrops.TryGetValue(confirmationToken, out pending!) || pending.ConfirmationInProgress)
+            {
+                return false;
+            }
+        }
+
+        if (await MatchesValidatedFileAsync(pending, cancellationToken).ConfigureAwait(false))
+        {
+            lock (gate)
+            {
+                return pendingDrops.TryGetValue(confirmationToken, out var current) &&
+                    ReferenceEquals(current, pending) &&
+                    !current.ConfirmationInProgress;
+            }
+        }
+
+        RemoveInvalidPendingDrop(confirmationToken, pending);
+        return false;
     }
 
     public bool Cancel(Guid confirmationToken)
@@ -237,6 +266,12 @@ public sealed class FileDropProvider : IActivityProvider
         bool succeeded;
         try
         {
+            if (!await MatchesValidatedFileAsync(pending, cancellationToken).ConfigureAwait(false))
+            {
+                RemoveInvalidPendingDrop(confirmationToken, pending);
+                return WallpaperConfirmationResult.Failed;
+            }
+
             succeeded = await wallpaper.TrySetAsync(pending.CanonicalPath, cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -283,23 +318,6 @@ public sealed class FileDropProvider : IActivityProvider
         }
     }
 
-    internal bool TryTakePendingDrop(Guid confirmationToken, out Guid activityId, out string canonicalPath)
-    {
-        lock (gate)
-        {
-            if (pendingDrops.Remove(confirmationToken, out var pending))
-            {
-                activityId = pending.ActivityId;
-                canonicalPath = pending.CanonicalPath;
-                return true;
-            }
-        }
-
-        activityId = Guid.Empty;
-        canonicalPath = string.Empty;
-        return false;
-    }
-
     private void ResetConfirmation(Guid confirmationToken, PendingDrop pending)
     {
         lock (gate)
@@ -310,6 +328,99 @@ public sealed class FileDropProvider : IActivityProvider
                 current.ConfirmationInProgress = false;
             }
         }
+    }
+
+    private async Task<bool> MatchesValidatedFileAsync(
+        PendingDrop pending,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var metadata = fileSystem.GetMetadata(pending.CanonicalPath);
+            if ((metadata.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0 ||
+                fileSystem.HasReparsePointInPath(pending.CanonicalPath) ||
+                metadata.Length != pending.Fingerprint.Length ||
+                metadata.Length > maximumFileSize ||
+                GetImageType(Path.GetExtension(pending.CanonicalPath)) != pending.Fingerprint.ImageType)
+            {
+                return false;
+            }
+
+            var current = await ReadFingerprintAsync(
+                pending.CanonicalPath,
+                metadata.Length,
+                pending.Fingerprint.ImageType,
+                cancellationToken).ConfigureAwait(false);
+            return CryptographicOperations.FixedTimeEquals(current.Hash, pending.Fingerprint.Hash);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (!IsFatalException(exception))
+        {
+            return false;
+        }
+    }
+
+    private async Task<FileFingerprint> ReadFingerprintAsync(
+        string canonicalPath,
+        long expectedLength,
+        ImageType imageType,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = fileSystem.OpenRead(canonicalPath);
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        var buffer = new byte[81920];
+        var header = new byte[8];
+        var headerLength = 0;
+        long totalLength = 0;
+        int read;
+        while ((read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false)) != 0)
+        {
+            totalLength += read;
+            if (totalLength > maximumFileSize || totalLength > expectedLength)
+            {
+                throw new InvalidDataException("The image changed while it was being validated.");
+            }
+
+            var copyLength = Math.Min(read, header.Length - headerLength);
+            if (copyLength > 0)
+            {
+                buffer.AsSpan(0, copyLength).CopyTo(header.AsSpan(headerLength));
+                headerLength += copyLength;
+            }
+
+            hash.AppendData(buffer, 0, read);
+        }
+
+        if (totalLength != expectedLength || !HeaderMatches(imageType, header.AsSpan(0, headerLength)))
+        {
+            throw new InvalidDataException("The image changed while it was being validated.");
+        }
+
+        return new FileFingerprint(totalLength, imageType, hash.GetHashAndReset());
+    }
+
+    private void RemoveInvalidPendingDrop(Guid confirmationToken, PendingDrop pending)
+    {
+        lock (gate)
+        {
+            if (!pendingDrops.TryGetValue(confirmationToken, out var current) ||
+                !ReferenceEquals(current, pending))
+            {
+                return;
+            }
+
+            pendingDrops.Remove(confirmationToken);
+        }
+
+        eventBus.Publish(new ActivityUpserted(CreateActivity(
+            pending.ActivityId,
+            ActivityState.Failed,
+            "Image changed",
+            "The image changed after validation and was rejected.")));
+        eventBus.Publish(new ActivityRemoved(pending.ActivityId));
     }
 
     private FileDropResult PublishRejection(FileDropRejection rejection)
@@ -380,11 +491,15 @@ public sealed class FileDropProvider : IActivityProvider
         Bmp,
     }
 
-    private sealed class PendingDrop(Guid activityId, string canonicalPath)
+    private sealed record FileFingerprint(long Length, ImageType ImageType, byte[] Hash);
+
+    private sealed class PendingDrop(Guid activityId, string canonicalPath, FileFingerprint fingerprint)
     {
         public Guid ActivityId { get; } = activityId;
 
         public string CanonicalPath { get; } = canonicalPath;
+
+        public FileFingerprint Fingerprint { get; } = fingerprint;
 
         public bool ConfirmationInProgress { get; set; }
     }

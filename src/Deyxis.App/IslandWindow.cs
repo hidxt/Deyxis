@@ -180,6 +180,11 @@ public sealed class IslandWindow : Window, IIslandPlacementHost
             return;
         }
 
+        if (!await fileDropProvider.RevalidatePendingAsync(result.ConfirmationToken))
+        {
+            return;
+        }
+
         islandView.SetValidatedFileDrop(
             result.ActivityId,
             result.ConfirmationToken,

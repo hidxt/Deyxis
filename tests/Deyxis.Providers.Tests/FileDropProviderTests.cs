@@ -276,6 +276,41 @@ public sealed class FileDropProviderTests
     }
 
     [Fact]
+    public async Task Revalidation_rejects_a_file_replaced_before_preview_is_exposed()
+    {
+        const string path = @"C:\images\photo.png";
+        var files = new FakeFileDropFileSystem();
+        files.AddFile(path, [.. PngHeader, 0x01]);
+        var provider = new FileDropProvider(new EventBus(), files);
+        var accepted = await provider.HandleDropAsync([path]);
+        files.AddFile(path, [.. PngHeader, 0x02]);
+
+        var remainsValid = await provider.RevalidatePendingAsync(accepted.ConfirmationToken);
+
+        Assert.False(remainsValid);
+        Assert.False(provider.HasPendingDrop(accepted.ConfirmationToken));
+    }
+
+    [Fact]
+    public async Task Confirmation_rejects_a_file_replaced_after_preview_validation()
+    {
+        const string path = @"C:\images\photo.png";
+        var files = new FakeFileDropFileSystem();
+        files.AddFile(path, [.. PngHeader, 0x01]);
+        var wallpaper = new FakeCurrentUserWallpaper();
+        var provider = new FileDropProvider(new EventBus(), files, wallpaper);
+        var accepted = await provider.HandleDropAsync([path]);
+        Assert.True(await provider.RevalidatePendingAsync(accepted.ConfirmationToken));
+        files.AddFile(path, [.. PngHeader, 0x02]);
+
+        var result = await provider.ConfirmAsync(accepted.ConfirmationToken);
+
+        Assert.Equal(WallpaperConfirmationResult.Failed, result);
+        Assert.Empty(wallpaper.RequestedPaths);
+        Assert.False(provider.HasPendingDrop(accepted.ConfirmationToken));
+    }
+
+    [Fact]
     public async Task Canceled_validation_does_not_read_or_publish()
     {
         var files = new FakeFileDropFileSystem();
