@@ -1,6 +1,7 @@
 using Deyxis.Core.Activities;
 using Deyxis.Core.Events;
 using Deyxis.Platform.Windows.Media;
+using Deyxis.Providers.Agents;
 using Deyxis.Providers.Lyrics;
 using Deyxis.Providers.Media;
 using Microsoft.UI.Xaml;
@@ -15,6 +16,7 @@ public partial class App : Application
     private CancellationTokenSource? mediaStartupTokenSource;
     private GsmtcMediaSessionPlatform? mediaSessionPlatform;
     private MediaProvider? mediaProvider;
+    private AgentProviderComposition? agentProviderComposition;
 
     public App()
     {
@@ -26,6 +28,7 @@ public partial class App : Application
         var eventBus = new EventBus();
         activityPipeline = new ActivityPipeline(eventBus, new ActivityManager());
         activityProvider = new MockActivityProvider(eventBus);
+        agentProviderComposition = AgentProviderComposition.CreateDisabled(eventBus);
         islandWindow = new IslandWindow(activityPipeline.Current);
 
         activityPipeline.SnapshotChanged += ActivityPipeline_SnapshotChanged;
@@ -58,6 +61,7 @@ public partial class App : Application
         }
 
         activityProvider?.Dispose();
+        agentProviderComposition?.Dispose();
         mediaStartupTokenSource?.Cancel();
         mediaProvider?.Dispose();
         mediaSessionPlatform?.Dispose();
@@ -65,6 +69,7 @@ public partial class App : Application
         activityPipeline?.Dispose();
 
         activityProvider = null;
+        agentProviderComposition = null;
         mediaStartupTokenSource = null;
         mediaProvider = null;
         mediaSessionPlatform = null;
